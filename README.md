@@ -139,6 +139,11 @@ https://github.com/dominikh/yasnippet-go
 https://github.com/dominikh/go-errcheck.el provides integration with
 [errcheck](https://github.com/kisielk/errcheck).
 
+## Imenu
+
+For Imenu support, take a look at
+[goindex](https://github.com/Liupai/goindex).
+
 # Stability
 
 go-mode.el has regular, tagged releases and is part of the MELPA

@@ -169,6 +169,11 @@ a `before-save-hook'."
   :type 'string
   :group 'go)
 
+(defcustom goindex-command "goindex"
+  "The 'goindex' command."
+  :type 'string
+  :group 'go)
+
 (defcustom go-other-file-alist
   '(("_test\\.go\\'" (".go"))
     ("\\.go\\'" ("_test.go")))
@@ -882,6 +887,63 @@ Function result is a unparenthesized type or a parameter list."
 This is intended to be called from `before-change-functions'."
   (setq go-dangling-cache (make-hash-table :test 'eql)))
 
+(defun go--invoke-index ()
+  (let ((temp-buffer (generate-new-buffer "*goindex*"))
+	(goindex-args '("-i")))
+    (prog2
+        (apply #'call-process-region
+               (point-min)
+               (point-max)
+	       goindex-command
+               nil
+               temp-buffer
+               nil
+               goindex-args)
+        (with-current-buffer temp-buffer (buffer-string))
+      (kill-buffer temp-buffer))))
+
+(defun go--get-imenu (strings)
+  (let ((index-alist (list nil)))
+    (mapcar (lambda (str)
+              (let* ((item (split-string str ",,"))
+                     (title (car item))
+                     (item (cdr item)))
+		(setcdr item (byte-to-position (string-to-int (nth-value 1 item))))
+                (unless (assoc title index-alist)
+		  ;; Text properties for helm-imenu
+		  ;; Need use github.com/LiuPai/helm/ to support helm-imenu properties
+		  (let ((prop (cond
+                               ((string= title "Variables")
+                                'font-lock-variable-name-face)
+                               ((string= title "Constants")
+                                'font-lock-constant-face)
+                               ((string= title "Struct")
+                                'font-lock-type-face)
+                               ((string= title "Interface")
+                                'font-lock-builtin-face)
+                               ((string= title "Alias")
+                                'font-lock-comment-face)
+                               ((string= title "Function")
+                                'font-lock-function-name-face)
+                               ((string-prefix-p "Method" title)
+                                'font-lock-keyword-face))))
+		    (setq title (propertize title 'face prop)))
+                  (push (list title) index-alist))
+                ;; This is the desired submenu,
+                ;; starting with its title (or nil).
+                (let ((menu (assoc title index-alist)))
+                  ;; Insert the item unless it is already present.
+                  (unless (member item (cdr menu))
+                    (setcdr menu (cons item (cdr menu)))))))
+            strings)
+    index-alist))
+
+(defun go-create-imenu ()
+  (let ((imenu (go--get-imenu (reverse (split-string (go--invoke-index) "\n" t)))))
+    (if (equal imenu '("PANIC"))
+	(error "GOCODE PANIC: Please check y our code by \"go build\"")
+      imenu)))
+
 ;;;###autoload
 (define-derived-mode go-mode prog-mode "Go"
   "Major mode for editing Go source text.
@@ -976,9 +1038,7 @@ with goflymake \(see URL `https://github.com/dougm/goflymake'), gocode
   ;; ff-find-other-file
   (setq ff-other-file-alist 'go-other-file-alist)
 
-  (setq imenu-generic-expression
-        '(("type" "^type *\\([^ \t\n\r\f]*\\)" 1)
-          ("func" "^func *\\(.*\\) {" 1)))
+  (setq imenu-create-index-function 'go-create-imenu)
   (imenu-add-to-menubar "Index")
 
   ;; Go style
